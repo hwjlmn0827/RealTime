@@ -11,15 +11,11 @@ class Trans:
 
     def findAll(self, all_str, sub_str):
         index_list = []
-        index = all_str.find(sub_str)
-        sub_len = len(sub_str)
-        while index != -1:
-            index_list.append(index)
-            index = all_str.find(sub_str, index + sub_len)
-        if len(index_list) > 0:
-            return index_list
-        else:
-            return -1
+        step_list = all_str.split(',')
+        for (x,y) in enumerate(step_list):
+            if y == sub_str:
+                index_list.append(x)
+        return index_list 
 
     def readFiles(self):
         f1 = open(self.input,"r",encoding="utf-8")
@@ -29,7 +25,7 @@ class Trans:
             if i == 2:
                 self.bound = int(each.strip('\n'))
             if str(each).startswith("\n") is False and i > 3:
-                self.tasks.append(each.replace(' ','').split(",")[0])
+                self.tasks.append(each.split(" ")[0])
         f2 = open(self.char_schedual,"r",encoding="utf-8")
         self.allSteps = f2.read()
 
@@ -54,14 +50,14 @@ class Trans:
                 html += "<ul><li class='name'>%s</li>" % (each)
                 cnt = 0
                 res = ""
-                for i in range(1, self.bound + 1):
+                for i in range(0, self.bound):
                     if i in self.tickResults[each]:
-                        if i - 1 in self.tickResults[each] or i - 1 == 0:
+                        if i in self.tickResults[each] or i == 0:
                             html += "<li class='up'></li>"
                         else:
                             html += "<li class='upl'></li>"
                     else:
-                        if i - 1 not in self.tickResults[each] or i - 1 == 0:
+                        if i not in self.tickResults[each] or i == 0:
                             html += "<li class='down'></li>"
                         else:
                             html += "<li class='downl'></li>"
@@ -84,3 +80,4 @@ if __name__ == "__main__":
     trans = Trans("input.txt", "char_schedual.txt")
     trans.readFiles()
     trans.outPutTickByHTML()
+    print('tickResults',trans.tickResults)
