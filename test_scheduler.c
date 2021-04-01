@@ -8,20 +8,6 @@
 #include "time.h"
 
 
-// https://medlen.blog.csdn.net/arpicle/details/80772201?utm_medium=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromBaidu-1.control&depth_1-utm_source=distribute.pc_relevant_t0.none-task-blog-BlogCommendFromBaidu-1.control
-// EDF为可抢先式调度算法，其调度条件为sum(ei/pi) <= 1；
-// RMS算法为不可抢先调度算法，其调度条件为sum(ei/pi) <= n(exp(ln(2)/n)-1)。
-
-// pthread_create(pid,NULL,func,arg);
-// 其中第一个参数是pthread_t型的指针，用于保存线程id；
-// 第二个参数是pthread_attr_t的指针，用于说明要创建的线程的属性，NULL表示使用缺省属性；
-// 第三个参数指明了线程的入口，是一个只有一个(void *)参数的函数；第四个参数是传给线程入口函数的参数
-
-//为模拟调度算法，给每个线程设置一个等待锁，暂不运行的任务等待在相应的锁变量上。
-//主线程按调度算法唤醒一个子线程，被选中线程执行一个时间单位，然后将控制权交给主线程判断是否需要重新调度。
-
-// gcc -lpthread -lm test_scheduler.c -o scheduler.out
-// ./scheduler.out
 
 typedef struct{  //实时任务描述，此处的任务都为周期等于截止时间
 	char task_id[4];
@@ -93,28 +79,28 @@ int main() //主函数mian()初始化相关数据，创建实时任务并对任�
 		r=((double)task_num)*(exp(log(2)/(double)task_num)-1);
 		printf("r is %lf\n",r);
 	}
-	// if(sum>r)
-	// {  //不可调度，一旦有任务在队列中就是不能调度
-	// 	printf("(sum=%lf > r=%lf) ,not schedulable!\n",sum,r);
-	// 	exit(2);
-	// }
+	if(sum>r)
+	{  //不可调度，一旦有任务在队列中就是不能调度
+		printf("(sum=%lf > r=%lf) ,not schedulable!\n",sum,r);
+		exit(2);
+	}
 	pthread_create(&idle_proc,NULL,(void*)idle,NULL); //创建闲逛线程
 	for(i=0;i<task_num;i++)  //创建实时任务线程
-		pthread_create(&tasks[i].th,NULL,(void*)proc,&tasks[i].arg);//触发一次proc任务
+		pthread_create(&tasks[i].th,NULL,(void*)proc,&tasks[i].arg);//触发第一次proc任务
 	for(i=0;i<demo_time;i++)
 	{
-		int j; 
 		if((curr_proc=select_proc(alg,i))!=-1)//有可运行任务，返回的就是当前任务
 		{  //按调度算法选线程
 			pthread_mutex_unlock(&proc_wait[curr_proc]);  //唤醒
 			pthread_mutex_lock(&main_wait);  //主线程等待
 		}
 		else
-		{   //无可运行任务，选择闲逛线程
+		{  //无可运行任务，选择闲逛线程
 			pthread_mutex_unlock(&idle_wait);  
 			pthread_mutex_lock(&main_wait);
 		}
-		for(j=0;j<task_num;j++)//为什么要无差别周期减？
+		int j; 
+		for(j=0;j<task_num;j++)//为什么要无差别周期减?每个task的周期left都要-1
 		{  //pi--，为0时开始下一周期
 			if (i>=tasks[j].ri)
 			{
@@ -123,7 +109,7 @@ int main() //主函数mian()初始化相关数据，创建实时任务并对任�
 					tasks[j].pi_left=tasks[j].pi;
 					tasks[j].di_left=tasks[j].di;
 					tasks[j].ei_left=tasks[j].ei;
-					pthread_create(&tasks[j].th,NULL,(void*)proc,&tasks[j].arg);//99行的proc任务已经结束了，要再次触发
+					pthread_create(&tasks[j].th,NULL,(void*)proc,&tasks[j].arg);//再次触发
 					tasks[j].flag=2;
 				}
 			}
@@ -140,7 +126,8 @@ int main() //主函数mian()初始化相关数据，创建实时任务并对任�
 
 void proc(int* args)//被选中的任务(temp2)执行 线程的入口
 {
-	while(tasks[*args].ei_left>0&&tasks[*args].di_left>0)
+	printf("in proc %s %d %d\n",tasks[*args].task_id, tasks[*args].ei_left,tasks[*args].di_left );
+	while(tasks[*args].ei_left>0&&tasks[*args].di_left>0) //是while，那么意思是不可抢占吗？
 	{
 		pthread_mutex_lock(&proc_wait[*args]);  //等待被调度（锁上等
 		if(idle_num!=0)//给之前的idle做一个总结
@@ -155,7 +142,7 @@ void proc(int* args)//被选中的任务(temp2)执行 线程的入口
 		if(tasks[*args].ei_left==0)//走完了全程就用(e)表示
 		{
 			// printf("(%d)",tasks[*args].ei);
-			tasks[*args].flag=0;
+			tasks[*args].flag=0;//执行完了以后flag变为0
 			tasks[*args].call_num++;
 		}
 		pthread_mutex_unlock(&main_wait); //唤醒主线程
@@ -190,28 +177,42 @@ int select_proc(int alg, int step)//调度算法选择线程
 	{
 		if(tasks[j].flag==2&&step>=tasks[j].ri)//初始化的时候flag就是2 意思是目前j空闲
 		{
+			printf("\nloop j=%d step =%d \n", j,step);//值得判断的task[j] 主要看flag是否符合
 			switch(alg)
 			{
 				case 1:    //RMS算法
 					if(temp1>tasks[j].pi)//取更小的周期
 					{
 						temp1=tasks[j].pi;
-						temp2=j;//解释了为什么是0开始
+						temp2=j;//解释了为什么是0开始，temp2为当前的步数吧
 					}
-				case 2:    //DMS算法
+				case 2:    //DMS算法,因为每个任务的di是确定的
 					if(temp1>tasks[j].di)
 					{
 						temp1=tasks[j].di;
 						temp2=j;
 					}
 				case 3:    //EDF算法
-					if(temp1>tasks[j].ei_left)//取到所有task中最小的执行时间，temp2是最小时间的任务序
+					if(temp1>tasks[j].pi_left)//取到所有task中最小的执行时间，temp2是最小时间的任务数
 					{
-						temp1=tasks[j].ei_left;
+						printf("before  %s %d %d\n", tasks[0].task_id, tasks[0].pi_left, tasks[0].flag);
+						printf("before  %s %d %d\n", tasks[1].task_id, tasks[1].pi_left, tasks[1].flag);
+						printf("before  %s %d %d\n", tasks[2].task_id, tasks[2].pi_left, tasks[2].flag);
+						temp1=tasks[j].pi_left;
 						temp2=j;
 					}
+					printf("after select %d\n",temp2);
+					// if(temp1>tasks[j].di_left)//取到所有task中最小的执行时间，temp2是最小时间的任务数
+					// {
+					// 	printf("before  %s %d %d\n", tasks[0].task_id, tasks[0].di_left, tasks[0].flag);
+					// 	printf("before  %s %d %d\n", tasks[1].task_id, tasks[1].di_left, tasks[1].flag);
+					// 	printf("before  %s %d %d\n", tasks[2].task_id, tasks[2].di_left, tasks[2].flag);
+					// 	temp1=tasks[j].di_left;
+					// 	temp2=j;
+					// 	printf("after select %d\n",temp2);
+					// }
 			}
 		}
 	}
-	return temp2;
+	return temp2; //选中的task序号
 }
